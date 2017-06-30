@@ -2,11 +2,13 @@ package com.example.coachroebuck.userexperienceexerciseandroid;
 
 import android.content.Context;
 import android.graphics.Color;
+import android.support.constraint.ConstraintLayout;
 import android.util.AttributeSet;
 import android.util.Log;
 import android.view.GestureDetector;
 import android.view.MotionEvent;
 import android.view.View;
+import android.view.ViewParent;
 import android.view.animation.Animation;
 import android.view.animation.ScaleAnimation;
 import android.widget.LinearLayout;
@@ -100,16 +102,9 @@ public class Cell extends RelativeLayout
             linearLayout.setOrientation(LinearLayout.HORIZONTAL);
 
             for(int j = 0; j < columns; j++) {
-                final Random rnd = new Random();
-                final int color = Color.argb(255, rnd.nextInt(256), rnd.nextInt(256), rnd.nextInt(256));
                 final int index = (i * rows) + j;
-                Cell view = new Cell(getContext());
-                view.setLayoutParams(param);
-                view.setBackgroundColor(color);
-                view.setPosition(index);
-                view.setzOrder(zOrder + 1);
-                view.setCallback(this);
-                linearLayout.addView(view);
+                Cell childCell = addCell(this, index);
+                linearLayout.addView(childCell);
             }
 
             rootLinearLayout.addView(linearLayout);
@@ -143,7 +138,6 @@ public class Cell extends RelativeLayout
     public void onSelectToExpand(final Cell cell) {
         this.selectedCell = cell;
         updateForCollapsingOrExpanding(cell, true);
-//        cell.setListener(true);
 //        infoView.bind(rows, columns);
     }
 
@@ -161,7 +155,41 @@ public class Cell extends RelativeLayout
                 pivotY = ((cell.getPosition() / rows) * (float)(cell.getMeasuredHeight() + (cell.getMeasuredHeight() * 0.5))) / (float)getMeasuredHeight();
             }
             scaleView(this, x1, x2, y1, y2, pivotX, pivotY);
+
+            if(isExpanded) {
+                Cell childCell = addCell(this, position);
+                childCell.bind(rows, columns);
+                childCell.setPivotX(pivotX);
+                childCell.setPivotY(pivotY);
+                ConstraintLayout viewParent = (ConstraintLayout)this.getParent();
+                viewParent.addView(childCell);
+                scaleView(childCell,
+                        1/columns,
+                        1,
+                        1/rows,
+                        1,
+                        pivotX, pivotY);
+            }
         }
+    }
+
+    private Cell addCell(final ICellSelection parentCell, final int position) {
+        LinearLayout.LayoutParams param = new LinearLayout.LayoutParams(
+                LayoutParams.MATCH_PARENT,
+                LayoutParams.MATCH_PARENT,
+                1.0f
+        );
+
+        final Random rnd = new Random();
+        final int color = Color.argb(255, rnd.nextInt(256), rnd.nextInt(256), rnd.nextInt(256));
+        Cell childCell = new Cell(getContext());
+        childCell.setLayoutParams(param);
+        childCell.setBackgroundColor(color);
+        childCell.setPosition(position);
+        childCell.setzOrder(zOrder + 1);
+        childCell.setCallback(parentCell);
+
+        return childCell;
     }
 
     private void scaleView(View v, float x1, float x2, float y1, float y2, float pivotXValue, float pivotYValue) {
