@@ -8,29 +8,25 @@ import android.util.Log;
 import android.view.GestureDetector;
 import android.view.MotionEvent;
 import android.view.View;
+import android.view.ViewParent;
 import android.view.animation.Animation;
 import android.view.animation.ScaleAnimation;
 import android.widget.LinearLayout;
 import android.widget.RelativeLayout;
 
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Random;
 
 public class Cell extends RelativeLayout
-        implements View.OnClickListener, View.OnTouchListener, ICellSelection {
-    private ICellSelection callback;
+        implements View.OnClickListener, View.OnTouchListener {
     private LinearLayout rootLinearLayout;
     private int rows;
     private int columns;
-    private boolean isAnimating = false;
     private Cell instance = this;
-    private boolean isExpanded = false;
+    private Cell containingCell;
+    private Cell parentCell;
     private GestureDetector detector;
     private int position = -1;
     private int zOrder = 0;
-    private List<LinearLayout> linearLayouts;
-    private Cell selectedCell;
     private float pivotX = 0;
     private float pivotY = 0;
     private OnSwipeListener.Direction direction = OnSwipeListener.Direction.none;
@@ -38,16 +34,19 @@ public class Cell extends RelativeLayout
     public Cell(Context context) {
         super(context);
         init();
+        containingCell = null;
     }
 
     public Cell(Context context, AttributeSet attrs) {
         super(context, attrs);
         init();
+        containingCell = null;
     }
 
     public Cell(Context context, AttributeSet attrs, int defStyle) {
         super(context, attrs, defStyle);
         init();
+        containingCell = null;
     }
 
     private void init() {
@@ -70,8 +69,6 @@ public class Cell extends RelativeLayout
         this.rows = rows;
         this.columns = columns;
 
-        linearLayouts = new ArrayList<>();
-
         for(int i = 0; i < rows; i++) {
             LinearLayout.LayoutParams param = new LinearLayout.LayoutParams(
                     LayoutParams.MATCH_PARENT,
@@ -86,18 +83,20 @@ public class Cell extends RelativeLayout
             for(int j = 0; j < columns; j++) {
                 final int index = (i * rows) + j;
                 Cell childCell = addCell(this, index);
+                childCell.setParentCell(parentCell);
                 linearLayout.addView(childCell);
             }
 
             rootLinearLayout.addView(linearLayout);
-            linearLayouts.add(linearLayout);
         }
     }
 
     @Override
     public void onClick(View view) {
-        if(this.callback != null && !this.isExpanded) {
-            this.callback.onSelectToExpand(this);
+        if(containingCell != null) {
+            containingCell.expand(getMeasuredWidth(),
+                    getMeasuredHeight(),
+                    position);
         }
     }
 
@@ -106,72 +105,142 @@ public class Cell extends RelativeLayout
 
         final boolean result = detector.onTouchEvent(motionEvent);
 
-        if(motionEvent.getAction() == MotionEvent.ACTION_UP
+        if (motionEvent.getAction() == MotionEvent.ACTION_UP
                 || motionEvent.getAction() == MotionEvent.ACTION_POINTER_UP) {
-            if(direction == OnSwipeListener.Direction.up
-                    && callback != null) {
-                callback.onSelectToCollapse(instance);
-            }
-            else if(direction == OnSwipeListener.Direction.down
-                    && callback != null) {
-                callback.onSelectToExpand(instance);
+            if (direction == OnSwipeListener.Direction.up
+                    && parentCell != null
+                    && containingCell != null) {
+                if(containingCell != null) {
+                    containingCell.collapseFromFullScreen(getMeasuredWidth(),
+                            getMeasuredHeight(),
+                            position);
                 }
+                if(parentCell != null) {
+                    parentCell.collapse(getMeasuredWidth(),
+                            getMeasuredHeight(),
+                            position);
+                }
+//                final int x1 = 1;
+//                final int x2 = 1 / containerCell.getColumns();
+//                final int y1 = 1;
+//                final int y2 = 1 / containerCell.getRows();
+//                final int width = containerCell.getMeasuredWidth();
+//                final int height = containerCell.getMeasuredHeight();
+//                pivotX = ((position % containerCell.getColumns()) * (float) (width + (width * 0.5))) / (float) getMeasuredWidth();
+//                pivotY = ((position / containerCell.getRows()) * (float) (height + (height * 0.5))) / (float) getMeasuredHeight();
+//                scaleView(containerCell, x1, x2, y1, y2, pivotX, pivotY);
+
+                if(parentCell != null) {
+                    parentCell.collapse(getMeasuredWidth(),
+                            getMeasuredHeight(),
+                            position);
+                }
+            } else if (direction == OnSwipeListener.Direction.down
+                    && containingCell != null) {
+                containingCell.expand(getMeasuredWidth(),
+                        getMeasuredHeight(),
+                        position);
             }
 
-        direction = OnSwipeListener.Direction.none;
+            direction = OnSwipeListener.Direction.none;
+        }
 
         return result;
-
     }
 
-    @Override
-    public void onSelectToCollapse(final Cell cell) {
-        this.selectedCell = null;
-//        cell.setListener(false);
-        updateForCollapsingOrExpanding(cell, false);
-        cell.removeAllViews();
-    }
+    private void expand(final int width,
+                        final int height,
+                        final int position) {
+        final int x1 = 1;
+        final int x2 = columns;
+        final int y1 = 1;
+        final int y2 = rows;
+        pivotX = ((position % columns) * (float)(width + (width * 0.5))) / (float)getMeasuredWidth();
+        pivotY = ((position / rows) * (float)(height + (height * 0.5))) / (float)getMeasuredHeight();
+        scaleView(this, x1, x2, y1, y2, pivotX, pivotY, null);
 
-    @Override
-    public void onSelectToExpand(final Cell cell) {
-        this.selectedCell = cell;
-        updateForCollapsingOrExpanding(cell, true);
-//        infoView.bind(rows, columns);
-    }
+        Cell childCell = addCell(null, position);
+        childCell.setParentCell(this);
+        childCell.bind(rows, columns);
+        childCell.setPivotX(pivotX);
+        childCell.setPivotY(pivotY);
+        childCell.setzOrder(zOrder + 1);
+        ConstraintLayout viewParent = (ConstraintLayout)this.getParent();
+        viewParent.addView(childCell);
+        scaleView(childCell,
+                1/columns,
+                1,
+                1/rows,
+                1,
+                pivotX, pivotY, null);
 
-    private void updateForCollapsingOrExpanding(final Cell cell,
-                                                final boolean isExpanding) {
-        if(!isAnimating) {
-            isAnimating = true;
-            isExpanded = isExpanding;
-            final int x1 = isExpanded ? 1 : columns;
-            final int x2 = isExpanded ? columns : 1;
-            final int y1 = isExpanded ? 1 : rows;
-            final int y2 = isExpanded ? rows : 1;
-            if(isExpanded) {
-                pivotX = ((cell.getPosition() % columns) * (float)(cell.getMeasuredWidth() + (cell.getMeasuredWidth() * 0.5))) / (float)getMeasuredWidth();
-                pivotY = ((cell.getPosition() / rows) * (float)(cell.getMeasuredHeight() + (cell.getMeasuredHeight() * 0.5))) / (float)getMeasuredHeight();
-            }
-            scaleView(this, x1, x2, y1, y2, pivotX, pivotY);
-
-            if(isExpanded) {
-                Cell childCell = addCell(this, position);
-                childCell.bind(rows, columns);
-                childCell.setPivotX(pivotX);
-                childCell.setPivotY(pivotY);
-                ConstraintLayout viewParent = (ConstraintLayout)this.getParent();
-                viewParent.addView(childCell);
-                scaleView(childCell,
-                        1/columns,
-                        1,
-                        1/rows,
-                        1,
-                        pivotX, pivotY);
-            }
+        if(containingCell != null) {
+            containingCell.expand();
         }
     }
 
-    private Cell addCell(final ICellSelection parentCell, final int position) {
+    private void expand() {
+        setVisibility(GONE);
+    }
+
+    private void collapse() {
+        collapse(getMeasuredWidth(),
+                getMeasuredHeight(),
+                position);
+    }
+
+    private void collapseFromFullScreen(final int width,
+                                        final int height,
+                                        final int position) {
+        final int x1 = 1;
+        final int x2 = 1/columns;
+        final int y1 = 1;
+        final int y2 = 1/rows;
+        pivotX = ((position % columns) * (float)(width + (width * 0.5))) / (float)getMeasuredWidth();
+        pivotY = ((position / rows) * (float)(height + (height * 0.5))) / (float)getMeasuredHeight();
+        scaleView(this, x1, x2, y1, y2, pivotX, pivotY,
+                new Animation.AnimationListener(){
+                    @Override
+                    public void onAnimationStart(Animation arg0) {
+                    }
+                    @Override
+                    public void onAnimationRepeat(Animation arg0) {
+                    }
+                    @Override
+                    public void onAnimationEnd(Animation arg0) {
+                        ConstraintLayout constraintLayout = (ConstraintLayout)getParent();
+                        constraintLayout.removeView(instance);
+                    }
+                });
+
+        if(containingCell != null
+                && containingCell.getVisibility() == VISIBLE) {
+            containingCell.collapse();
+        }if(containingCell != null) {
+            containingCell.setVisibility(VISIBLE);
+        }
+    }
+
+    private void collapse(final int width,
+                          final int height,
+                          final int position) {
+        final int x1 = columns;
+        final int x2 = 1;
+        final int y1 = rows;
+        final int y2 = 1;
+        pivotX = ((position % columns) * (float)(width + (width * 0.5))) / (float)getMeasuredWidth();
+        pivotY = ((position / rows) * (float)(height + (height * 0.5))) / (float)getMeasuredHeight();
+        scaleView(this, x1, x2, y1, y2, pivotX, pivotY, null);
+
+        if(containingCell != null
+                && containingCell.getVisibility() == VISIBLE) {
+            containingCell.collapse();
+        }if(containingCell != null) {
+            containingCell.setVisibility(VISIBLE);
+        }
+    }
+
+    private Cell addCell(final Cell containingCell, final int position) {
         LinearLayout.LayoutParams param = new LinearLayout.LayoutParams(
                 LayoutParams.MATCH_PARENT,
                 LayoutParams.MATCH_PARENT,
@@ -184,13 +253,20 @@ public class Cell extends RelativeLayout
         childCell.setLayoutParams(param);
         childCell.setBackgroundColor(color);
         childCell.setPosition(position);
-        childCell.setzOrder(zOrder + 1);
-        childCell.setCallback(parentCell);
+        childCell.setzOrder(zOrder);
+        childCell.setContainingCell(containingCell);
 
         return childCell;
     }
 
-    private void scaleView(View v, float x1, float x2, float y1, float y2, float pivotXValue, float pivotYValue) {
+    private void scaleView(View v,
+                           final float x1,
+                           final float x2,
+                           final float y1,
+                           final float y2,
+                           final float pivotXValue,
+                           final float pivotYValue,
+                           final Animation.AnimationListener animationListener) {
         Animation anim = new ScaleAnimation(
                 x1, x2, // Start and end values for the X axis scaling
                 y1, y2, // Start and end values for the Y axis scaling
@@ -198,85 +274,36 @@ public class Cell extends RelativeLayout
                 Animation.RELATIVE_TO_SELF, pivotYValue); // Pivot point of Y scaling
         anim.setFillAfter(true); // Needed to keep the result of the animation
         anim.setDuration(500);
-        anim.setAnimationListener(new Animation.AnimationListener(){
-            @Override
-            public void onAnimationStart(Animation arg0) {
-                preScale();
-            }
-            @Override
-            public void onAnimationRepeat(Animation arg0) {
-            }
-            @Override
-            public void onAnimationEnd(Animation arg0) {
-                isAnimating = false;
-                postScale();
-            }
-        });
+        anim.setAnimationListener(animationListener);
         v.setAnimation(anim);
         v.startAnimation(anim);
-    }
-
-    private void preScale() {
-        if(!isExpanded)  {
-            updateVisibility();
-        }
-    }
-
-    private void postScale() {
-        if (isExpanded) {
-            updateVisibility();
-        }
-    }
-
-    private void updateVisibility() {
-        for (LinearLayout linearLayout : linearLayouts) {
-            if(this.selectedCell == null) {
-                linearLayout.setVisibility(VISIBLE);
-                for (int i = 0; i < linearLayout.getChildCount(); i++) {
-                    Cell nextCell = (Cell) linearLayout.getChildAt(i);
-                    nextCell.setExpanded(false);
-                    linearLayout.getChildAt(i).setVisibility(VISIBLE);
-                }
-            }
-            else if (!this.selectedCell.getParent().equals(linearLayout)) {
-                linearLayout.setVisibility(isExpanded ? GONE : VISIBLE);
-            } else {
-                for (int i = 0; i < linearLayout.getChildCount(); i++) {
-                    Cell nextCell = (Cell) linearLayout.getChildAt(i);
-                    nextCell.setExpanded(isExpanded);
-                    if (!linearLayout.getChildAt(i).equals(this.selectedCell)) {
-                        linearLayout.getChildAt(i).setVisibility(isExpanded ? GONE : VISIBLE);
-                    }
-                }
-            }
-        }
-    }
-
-    public void setCallback(ICellSelection callback) {
-        this.callback = callback;
-    }
-
-    public int getPosition() {
-        return position;
     }
 
     public void setPosition(int position) {
         this.position = position;
     }
 
-    public int getzOrder() {
-        return zOrder;
-    }
-
     public void setzOrder(int zOrder) {
         this.zOrder = zOrder;
     }
 
-    public void setExpanded(boolean expanded) {
-        this.isExpanded = expanded;
+    public void setContainingCell(Cell containingCell) {
+        this.containingCell = containingCell;
     }
 
-    public boolean isExpanded() {
-        return isExpanded;
+    public int getRows() {
+        return rows;
+    }
+
+    public int getColumns() {
+        return columns;
+    }
+
+    public Cell getParentCell() {
+        return parentCell;
+    }
+
+    public void setParentCell(Cell parentCell) {
+        this.parentCell = parentCell;
     }
 }
