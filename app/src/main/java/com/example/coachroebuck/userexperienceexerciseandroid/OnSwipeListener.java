@@ -93,6 +93,7 @@ public class OnSwipeListener extends GestureDetector.SimpleOnGestureListener {
 
 
     public enum Direction{
+        none,
         up,
         down,
         left,

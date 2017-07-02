@@ -8,7 +8,6 @@ import android.util.Log;
 import android.view.GestureDetector;
 import android.view.MotionEvent;
 import android.view.View;
-import android.view.ViewParent;
 import android.view.animation.Animation;
 import android.view.animation.ScaleAnimation;
 import android.widget.LinearLayout;
@@ -34,6 +33,7 @@ public class Cell extends RelativeLayout
     private Cell selectedCell;
     private float pivotX = 0;
     private float pivotY = 0;
+    private OnSwipeListener.Direction direction = OnSwipeListener.Direction.none;
 
     public Cell(Context context) {
         super(context);
@@ -60,26 +60,8 @@ public class Cell extends RelativeLayout
 
             @Override
             public boolean onSwipe(Direction direction){
-                // Possible implementation
-                if(direction == Direction.left|| direction == Direction.right) {
-                    // Do something COOL like animation or whatever you want
-                    // Refer to your view if needed using a global reference
-                    return true;
-                }
-                else if(direction == Direction.up && isExpanded) {
-                    if(callback != null) {
-                        callback.onSelectToCollapse(instance);
-                    }
-                    return true;
-                }
-                else if(direction == Direction.down && !isExpanded) {
-                    if(callback != null) {
-                        callback.onSelectToExpand(instance);
-                    }
-                    return true;
-                }
-
-                return false;
+                instance.direction = direction;
+                return direction != Direction.none;
             }
         });
     }
@@ -121,9 +103,25 @@ public class Cell extends RelativeLayout
 
     @Override
     public boolean onTouch(View view, MotionEvent motionEvent) {
-        Log.d(this.getClass().getCanonicalName(), "onTouch: " + motionEvent.getAction()
-                + "; " + motionEvent.getButtonState());
-        return detector.onTouchEvent(motionEvent);
+
+        final boolean result = detector.onTouchEvent(motionEvent);
+
+        if(motionEvent.getAction() == MotionEvent.ACTION_UP
+                || motionEvent.getAction() == MotionEvent.ACTION_POINTER_UP) {
+            if(direction == OnSwipeListener.Direction.up
+                    && callback != null) {
+                callback.onSelectToCollapse(instance);
+            }
+            else if(direction == OnSwipeListener.Direction.down
+                    && callback != null) {
+                callback.onSelectToExpand(instance);
+                }
+            }
+
+        direction = OnSwipeListener.Direction.none;
+
+        return result;
+
     }
 
     @Override
